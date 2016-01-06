@@ -6,9 +6,9 @@
 #   pip install guessit
 #   pip install sublinimal
 SUBLINIMAL_CACHE=/var/downloads/subliminal-cache/
+export PATH="$PATH:/usr/local/bin"
 
 function main {
-  check_deps
   run_for_dir "$1"
 }
 
@@ -21,13 +21,6 @@ function run_for_dir {
   find "$dir" -iregex '.*\(avi\|mp4\|mkv\)$' -type f | while read videopath; do
     build_for_movie "$videopath"
   done
-}
-
-function check_deps {
-  echo -ne checking if there is sublinimal and srt-to-vtt on the system...
-  which subliminal &> /dev/null || exit 1
-  which srt-to-vtt &> /dev/null || exit 1
-  echo ok
 }
 
 # build_for_movie videofile
