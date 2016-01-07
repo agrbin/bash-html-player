@@ -48,6 +48,7 @@ EOF
     videobase=${videopath%.*}
     relvideo=$(basename "$videopath")
     relvideobase=$(basename "$videobase")
+    echo "<h1><a href=\"/token/$token/+video_index.html\">public link</a></h1>" >> "$OUT"
     echo "<tr>" >> "$OUT"
     echo "<th>$relvideo</th>" >> "$OUT"
     echo "<td><a href=\"/token/$token/$relvideobase.en.html\">play en</a></td>" >> "$OUT"
@@ -63,8 +64,6 @@ EOF
     </body>
   </html>
 EOF
-  echo ls -l "$OUT"
-  ls -l "$OUT"
 }
 
 # build_for_movie videofile
