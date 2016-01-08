@@ -2,13 +2,17 @@
 # ./build_player.sh directory
 # before attaching this script to torrent-finish try running it manually
 # Dependencies:
-#   npm install -g srt-to-vtt
+#   npm install -g srt2vtt
 #   pip install guessit
 #   pip install sublinimal
+#   pip install chardet
 SUBLINIMAL_CACHE=/var/downloads/subliminal-cache/
 
 # SUBLINIMAL_CACHE=/home/agrbin/.subliminal-cache/
+
 export PATH="$PATH:/usr/local/bin"
+
+SRT2VTT="node /usr/local/lib/node_modules/srt2vtt/bin/convert.js"
 
 function main {
   run_for_dir "$1" "$2"
@@ -28,6 +32,16 @@ function run_for_dir {
   build_video_index "$dir" "$token"
 }
 
+function echo_track_elem {
+  filepath="$1"
+  relpath="$2"
+  label="$3"
+  token="$4"
+  if [ -f "$filepath" ]; then
+    echo "<td><a href=\"/token/$token/$relpath\"> [$label] </a></td>"
+  fi
+}
+
 function build_video_index {
   dir=$1
   token=$2
@@ -38,24 +52,29 @@ function build_video_index {
     <html>
       <head>
         <style>
+          th { text-align: left; }
         </style>
       </head>
       <body>
         <table>
 EOF
 
+  echo "<h2>all links in this page are public - they don't require password</h2>" >> "$OUT"
+  echo "<h3><a href=\"/token/$token/+video_index.html\">link to this page</a></h3>" >> "$OUT"
   find "$dir" -iregex '.*\(avi\|mp4\|mkv\)$' -type f | while read videopath; do
     videobase=${videopath%.*}
     relvideo=$(basename "$videopath")
     relvideobase=$(basename "$videobase")
-    echo "<h1><a href=\"/token/$token/+video_index.html\">public link</a></h1>" >> "$OUT"
     echo "<tr>" >> "$OUT"
     echo "<th>$relvideo</th>" >> "$OUT"
-    echo "<td><a href=\"/token/$token/$relvideobase.en.html\">play en</a></td>" >> "$OUT"
-    echo "<td><a href=\"/token/$token/$relvideobase.hr.html\">play hr</a></td>" >> "$OUT"
-    echo "<td><a href=\"/token/$token/$relvideo\">download video</a></td>" >> "$OUT"
-    echo "<td><a href=\"/token/$token/$relvideobase.en.srt\">download en srt</a></td>" >> "$OUT"
-    echo "<td><a href=\"/tokhr/$tokhr/$relvideobase.hr.srt\">download hr srt</a></td>" >> "$OUT"
+
+    echo_track_elem "$videopath" "$relvideo" "download video" "$token" >> "$OUT"
+    echo_track_elem "$videobase.en.html" "$relvideobase.en.html" "play en" "$token" >> "$OUT"
+    echo_track_elem "$videobase.hr.html" "$relvideobase.hr.html" "play hr" "$token" >> "$OUT"
+    echo_track_elem "$videobase.en.srt" "$relvideobase.en.srt" "download en srt" "$token" >> "$OUT"
+    echo_track_elem "$videobase.hr.srt" "$relvideobase.hr.srt" "download hr srt" "$token" >> "$OUT"
+    echo_track_elem "$videobase.srt" "$relvideobase.srt" "download torrent srt" "$token" >> "$OUT"
+
     echo "</tr>" >> "$OUT"
   done
 
@@ -97,7 +116,8 @@ function build_for_movie {
     vttpath="$videobase.$lang.vtt"
     htmlpath=$videobase.$lang.html
     if [ -f "$srtpath" ]; then
-      srt-to-vtt "$srtpath" > "$vttpath"
+      $SRT2VTT < "$srtpath"  > "$vttpath"
+      charset=$(chardetect "$vttpath" | cut -f2 -d':' | cut -f2 -d' ')
       cnt=$((cnt + 1))
       cat > "$htmlpath" <<EOF
       <!doctype html>
@@ -112,7 +132,7 @@ function build_for_movie {
         <body>
           <video controls autoplay id="video">
             <source src="$relvideo" type="video/mp4" />
-            <track kind="subtitles" src="$relvtt" default />
+            <track kind="subtitles" src="$relvtt" charset="$charset" default />
             <div>
               <strong>Sorry, youll need an HTML5 Video capable browser.</strong>
             </div>
@@ -122,11 +142,10 @@ function build_for_movie {
 EOF
     fi
   done
-  echo $cnt subtitles found.
 
+  echo $cnt subtitles found.
   echo html created.
   echo
-  return $retval
 }
 
 main "$1" "$2"
