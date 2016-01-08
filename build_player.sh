@@ -34,9 +34,14 @@ function run_for_dir {
 
 function echo_track_elem {
   filepath="$1"
-  relpath="$2"
+  indexdir="$2"
   label="$3"
   token="$4"
+
+  relpath=$(
+    python -c "import os.path; print os.path.relpath('$filepath', '$indexdir')"
+  );
+
   if [ -f "$filepath" ]; then
     echo "<td><a href=\"/token/$token/$relpath\"> [$label] </a></td>"
   fi
@@ -63,17 +68,16 @@ EOF
   echo "<h3><a href=\"/token/$token/+video_index.html\">link to this page</a></h3>" >> "$OUT"
   find "$dir" -iregex '.*\(avi\|mp4\|mkv\)$' -type f | while read videopath; do
     videobase=${videopath%.*}
-    relvideo=$(basename "$videopath")
-    relvideobase=$(basename "$videobase")
-    echo "<tr>" >> "$OUT"
-    echo "<th>$relvideo</th>" >> "$OUT"
 
-    echo_track_elem "$videopath" "$relvideo" "download video" "$token" >> "$OUT"
-    echo_track_elem "$videobase.en.html" "$relvideobase.en.html" "play en" "$token" >> "$OUT"
-    echo_track_elem "$videobase.hr.html" "$relvideobase.hr.html" "play hr" "$token" >> "$OUT"
-    echo_track_elem "$videobase.en.srt" "$relvideobase.en.srt" "download en srt" "$token" >> "$OUT"
-    echo_track_elem "$videobase.hr.srt" "$relvideobase.hr.srt" "download hr srt" "$token" >> "$OUT"
-    echo_track_elem "$videobase.srt" "$relvideobase.srt" "download torrent srt" "$token" >> "$OUT"
+    echo "<tr>" >> "$OUT"
+    echo "<th>$(basename "$videopath")</th>" >> "$OUT"
+
+    echo_track_elem "$videopath" "$dir" "download video" "$token" >> "$OUT"
+    echo_track_elem "$videobase.en.html" "$dir" "play en" "$token" >> "$OUT"
+    echo_track_elem "$videobase.hr.html" "$dir" "play hr" "$token" >> "$OUT"
+    echo_track_elem "$videobase.en.srt" "$dir" "download en srt" "$token" >> "$OUT"
+    echo_track_elem "$videobase.hr.srt" "$dir" "download hr srt" "$token" >> "$OUT"
+    echo_track_elem "$videobase.srt" "$dir" "download torrent srt" "$token" >> "$OUT"
 
     echo "</tr>" >> "$OUT"
   done
@@ -102,7 +106,7 @@ function build_for_movie {
 
   # ignore if subtitle cant be downloaded
   # throttle download
-  #sleep 15
+  sleep 15
   echo downloading subtitles..
 
   subliminal --cache-dir=$SUBLINIMAL_CACHE \
