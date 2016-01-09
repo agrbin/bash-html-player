@@ -3,12 +3,17 @@
 # before attaching this script to torrent-finish try running it manually
 # Dependencies:
 #   npm install -g srt2vtt
-#   pip install guessit
 #   pip install sublinimal
 #   pip install chardet
-SUBLINIMAL_CACHE=/var/downloads/subliminal-cache/
 
-# SUBLINIMAL_CACHE=/home/agrbin/.subliminal-cache/
+SUBLINIMAL_CACHE=/var/downloads/subliminal-cache/
+THROTTLE_DOWNLOAD_SLEEP_S=1
+LANGUAGES="en hr"
+
+if [ ! -z "$DEV" ]; then
+  SUBLINIMAL_CACHE=$HOME/.subliminal-cache/
+  THROTTLE_DOWNLOAD_SLEEP_S=0
+fi
 
 export PATH="$PATH:/usr/local/bin"
 
@@ -20,7 +25,6 @@ function main {
 
 function run_for_dir {
   dir="$1"
-  token="$2"
   if [ ! -d "$dir" ]; then
     echo "$dir should be a dir."
     exit 1
@@ -29,61 +33,105 @@ function run_for_dir {
   find "$dir" -iregex '.*\(avi\|mp4\|mkv\)$' -type f | while read videopath; do
     build_for_movie "$videopath"
   done
-  build_video_index "$dir" "$token"
+  build_video_index "$dir"
 }
 
 function echo_track_elem {
-  filepath="$1"
-  indexdir="$2"
-  label="$3"
-  token="$4"
+  relpath="$1"
+  label="$2"
 
-  relpath=$(
-    python -c "import os.path; print os.path.relpath('$filepath', '$indexdir')"
-  );
-
-  if [ -f "$filepath" ]; then
-    echo "<td><a href=\"/token/$token/$relpath\"> [$label] </a></td>"
+  if [ -f "$relpath" ]; then
+    echo "<td><a href=\"$relpath\"> [$label] </a></td>"
   fi
 }
 
 function build_video_index {
   dir=$1
-  token=$2
-  OUT="$dir/+video_index.html"
-  echo building video index to $OUT..
-  cat > "$OUT" <<EOF
-    <!doctype html>
-    <html>
-      <head>
-        <style>
-          th { text-align: left; }
-        </style>
-      </head>
-      <body>
-        <table>
+  OUT="+video_index.html"
+  (
+    cd "$dir"
+    echo building video index to "$dir"/$OUT..
+    cat > "$OUT" <<EOF
+<!doctype html>
+<html>
+  <head>
+    <style>
+      th { text-align: left; }
+    </style>
+  </head>
+  <body>
+    <table>
 EOF
+    find . -iregex '.*\(avi\|mp4\|mkv\)$' -type f | while read relpath; do
+      videobase=${relpath%.*}
 
-  echo "<h2>all links in this page are public - they don't require password</h2>" >> "$OUT"
-  echo "<h3><a href=\"/token/$token/+video_index.html\">link to this page</a></h3>" >> "$OUT"
-  find "$dir" -iregex '.*\(avi\|mp4\|mkv\)$' -type f | while read videopath; do
-    videobase=${videopath%.*}
+      echo "<tr>" >> "$OUT"
+      echo "<th>$(basename "$relpath")</th>" >> "$OUT"
 
-    echo "<tr>" >> "$OUT"
-    echo "<th>$(basename "$videopath")</th>" >> "$OUT"
+      echo_track_elem "$relpath" "download video" >> "$OUT"
+      echo_track_elem "$videobase.en.html" "play en" >> "$OUT"
+      echo_track_elem "$videobase.hr.html" "play hr" >> "$OUT"
+      echo_track_elem "$videobase.en.srt" "download en srt" >> "$OUT"
+      echo_track_elem "$videobase.hr.srt" "download hr srt" >> "$OUT"
+      echo_track_elem "$videobase.srt" "download torrent srt" >> "$OUT"
 
-    echo_track_elem "$videopath" "$dir" "download video" "$token" >> "$OUT"
-    echo_track_elem "$videobase.en.html" "$dir" "play en" "$token" >> "$OUT"
-    echo_track_elem "$videobase.hr.html" "$dir" "play hr" "$token" >> "$OUT"
-    echo_track_elem "$videobase.en.srt" "$dir" "download en srt" "$token" >> "$OUT"
-    echo_track_elem "$videobase.hr.srt" "$dir" "download hr srt" "$token" >> "$OUT"
-    echo_track_elem "$videobase.srt" "$dir" "download torrent srt" "$token" >> "$OUT"
+      echo "</tr>" >> "$OUT"
+    done
+    cat >> "$OUT" <<EOF
+  </table>
+</body>
+</html>
+EOF
+  )
+}
 
-    echo "</tr>" >> "$OUT"
-  done
+# this function echoes 1 if html was built.
+function build_for_movie_lang {
+  videopath="$1"
+  lang="$2"
 
-  cat >> "$OUT" <<EOF
-      </table>
+  videobase=${videopath%.*}
+  srtpath="$videobase.$lang.srt"
+  vttpath="$videobase.$lang.vtt"
+  htmlpath=$videobase.$lang.html
+
+  # download subtitles
+  if [ ! -f "$srtpath" ]; then
+    subliminal --cache-dir=$SUBLINIMAL_CACHE \
+      download --force --language=en "$videopath" &> /dev/null
+  fi
+
+  if [ ! -f "$srtpath" ]; then
+    return
+  fi
+
+  # convert subtitles to vtt
+  if [ ! -f "$vttpath" ]; then
+    $SRT2VTT < "$srtpath"  > "$vttpath"
+  fi
+
+  relvideo=$(basename "$videopath")
+  relvtt=$(basename "$videobase").$lang.vtt
+  echo subtitles found for $lang
+
+  cat > "$htmlpath" <<EOF
+  <!doctype html>
+  <html>
+    <head>
+      <style>
+        video { width: 100%; height: 100%; }
+        html { margin: 0px; }
+        body { margin: 0px; }
+      </style>
+    </head>
+    <body>
+      <video controls autoplay id="video">
+        <source src="$relvideo" type="video/mp4" />
+        <track kind="subtitles" src="$relvtt" default />
+        <div>
+          <strong>Sorry, youll need an HTML5 Video capable browser.</strong>
+        </div>
+      </video>
     </body>
   </html>
 EOF
@@ -93,63 +141,16 @@ EOF
 # tries to download subtitles for a movie and builds a .html player.
 function build_for_movie {
   videopath="$1"
-  videobase=${videopath%.*}
+  echo processing $(basename "$videopath") ..
 
-  relvideo=$(basename "$videopath")
-
-  txtpath=$videobase.txt
-
-  echo processing $relvideo..
-
-  # extract some information from video
-  guessit "$videopath" > "$txtpath"
-
-  # ignore if subtitle cant be downloaded
   # throttle download
-  sleep 15
-  echo downloading subtitles..
-
-  subliminal --cache-dir=$SUBLINIMAL_CACHE \
-     download --force --language=en --language=hr "$videopath" &> /dev/null
+  sleep $THROTTLE_DOWNLOAD_SLEEP_S
 
   # convert subittles and add to html.
-  cnt=0
-  for lang in en hr; do
-    relvtt=$(basename "$videobase").$lang.vtt
-    srtpath="$videobase.$lang.srt"
-    vttpath="$videobase.$lang.vtt"
-    htmlpath=$videobase.$lang.html
-    if [ -f "$srtpath" ]; then
-      $SRT2VTT < "$srtpath"  > "$vttpath"
-      charset=$(chardetect "$vttpath" | cut -f2 -d':' | cut -f2 -d' ')
-      cnt=$((cnt + 1))
-      cat > "$htmlpath" <<EOF
-      <!doctype html>
-      <html>
-        <head>
-          <style>
-            video { width: 100%; height: 100%; }
-            html { margin: 0px; }
-            body { margin: 0px; }
-          </style>
-        </head>
-        <body>
-          <video controls autoplay id="video">
-            <source src="$relvideo" type="video/mp4" />
-            <track kind="subtitles" src="$relvtt" charset="$charset" default />
-            <div>
-              <strong>Sorry, youll need an HTML5 Video capable browser.</strong>
-            </div>
-          </video>
-        </body>
-      </html>
-EOF
-    fi
+  for lang in $LANGUAGES; do
+    build_for_movie_lang "$videopath" "$lang"
   done
-
-  echo $cnt subtitles found.
-  echo html created.
   echo
 }
 
-main "$1" "$2"
+main "$1"
