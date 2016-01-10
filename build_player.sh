@@ -4,7 +4,6 @@
 # Dependencies:
 #   npm install -g srt2vtt
 #   pip install sublinimal
-#   pip install chardet
 
 SUBLINIMAL_CACHE=/var/downloads/subliminal-cache/
 THROTTLE_DOWNLOAD_SLEEP_S=1
